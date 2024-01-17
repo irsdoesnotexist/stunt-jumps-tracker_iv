@@ -1,0 +1,4 @@
+.vscode/**
+
+/src/build/*
+!/src/build/build.ninja
