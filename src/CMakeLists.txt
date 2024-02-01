@@ -1,12 +1,12 @@
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.25)
 
-set(CXX_STANDARD 14)
+set(CXX_STANDARD 23)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/../dist)
 set(CMAKE_CXX_COMPILER clang++)
 
 set(CMAKE_DEBUG_POSTFIX d)
 
-# 
+# To get rid of a bunch of unused dlls being linked into the program
 set(CMAKE_CXX_STANDARD_LIBRARIES_INIT "")
 set(CMAKE_C_STANDARD_LIBRARIES_INIT "")
 set(CMAKE_C_STANDARD_LIBRARIES "")
@@ -29,6 +29,7 @@ add_compile_options(
 add_link_options(
     -GR-
     -Oi
+    -MT
 )
 
 # Reading include and lib paths from the .json
@@ -56,6 +57,8 @@ project(sjt4)
 
 add_executable(${PROJECT_NAME}
     main.cxx
+    app.hpp         app.cxx
+    windowing.hpp   windowing.cxx
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC $<$<PLATFORM_ID:Windows>:${win32Include}>)
