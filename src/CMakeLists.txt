@@ -57,8 +57,6 @@ project(sjt4)
 
 add_executable(${PROJECT_NAME}
     main.cxx
-    app.hpp         app.cxx
-    windowing.hpp   windowing.cxx
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC $<$<PLATFORM_ID:Windows>:${win32Include}>)

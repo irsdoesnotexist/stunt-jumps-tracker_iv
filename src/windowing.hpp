@@ -1,44 +1,46 @@
-#include <um/Windows.h>
-
+#pragma once
 #include "app.hpp"
 
-#ifndef SJT4_WINDOWING_H
-#define SJT4_WINDOWING_H
+#include <um/Windows.h>
+
+#include <cstdint>
+#include <memory>
+#include <span>
+
 namespace sjt4_wndwng {
 
-extern "C" typedef struct windowCreateInfo windowCreateInfo_t;
-class Wnd_t;
+extern "C" typedef struct SJT4_wndInfo {
+    std::uint32_t     dwExStyle;
+    LPCWSTR           lpClassName;
+    LPCWSTR           lpWindowName;
+    std::uint32_t     dwStyle;
+    std::int32_t      x;
+    std::int32_t      y;
+    std::int32_t      nWidth;
+    std::int32_t      nHeight;
+    const HWND        hParent; //win32 handle
+    HMENU             hMenu;   //void*
+    HINSTANCE         hInstance;//void*
+    void*             lpParam;
+} SJT4_wndInfo_t;
 
+class wndClass_t {  // Manages lifetime of win32 window classes
+private:
+    LPCWSTR  name;
+    HINSTANCE app;
+public:
+    wndClass_t(const WNDCLASS&, const HINSTANCE) noexcept;
+    ~wndClass_t() noexcept;
 
-#if defined (_WIN32)
-extern "C" {
-    typedef struct windowCreateInfo {
-    } windowCreateInfo_t;
-}
+    static std::shared_ptr<wndClass_t> clsCheckNRegister(const WNDCLASS&, const HINSTANCE) noexcept;
+} __declspec(unused);
 
-#define SJT4_MAIN_WND_CLS_NAME "sjt4_mainWindowCls"
-
-#define SJT4_MAIN_WND_CREATE_INFO   windowCreateInfo_t  \
-    {                                                   \
-                                                        \
-    };
-//
-
-#define SJT4_MAIN_WND_CLS_INFO      WNDCLASSA   \
-    {                                           \
-        .style       = CS_HREDRAW|CS_VREDRAW,   \
-        .lpfnWndProc = nullptr,                 \
-        .cbClsExtra = 0, .cbWndExtra = 0,       \
-    };
-//
 class Wnd_t {
 private:
-    HWND hWnd;
+    HWND handle;
+    std::shared_ptr<wndClass_t> p_cls;
 public:
-    bool init(const windowCreateInfo_t&) noexcept;
+    Wnd_t(const SJT4_wndInfo_t& wndInfo, const WNDCLASS&) noexcept;
 };
-
+//
 }
-#endif
-
-#endif
