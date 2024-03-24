@@ -68,6 +68,7 @@ VkResult sjt4::rndr::init(const HWND in_mainWnd, const HINSTANCE in_hInst) {
     const std::vector<const char*> validationLayers {};
     const std::vector<const char*> instanceExts {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
 #endif
+{
     static constexpr VkApplicationInfo appInfo {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pNext = nullptr,                                   // TODO: add VkValidationCheckEXT* here if EXT is availiable
@@ -91,8 +92,10 @@ VkResult sjt4::rndr::init(const HWND in_mainWnd, const HINSTANCE in_hInst) {
         LOG("Failed to create rndr::VkInstance. Code: %d\n" COMMA res);
         return res;
     }
+}
 
 #ifdef DEBUG
+{
     // Create debug utils callback function
     VkDebugUtilsMessengerCreateInfoEXT debugMsgInfo {
         .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
@@ -114,8 +117,10 @@ VkResult sjt4::rndr::init(const HWND in_mainWnd, const HINSTANCE in_hInst) {
         return VK_ERROR_EXTENSION_NOT_PRESENT;
     }
     p_vkCreateDebugUtilsMessengerEXT(sjt4::rndr::inst, &debugMsgInfo, nullptr, &sjt4::rndr::debugMessenger);
+}
 #endif
 
+{
     // Create presentation surface
     VkWin32SurfaceCreateInfoKHR surfaceInfo {
         .sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
@@ -128,21 +133,23 @@ VkResult sjt4::rndr::init(const HWND in_mainWnd, const HINSTANCE in_hInst) {
         LOG("Failed to create rndr::presentSurface. Code: %d\n" COMMA res);
         return res;
     }
+}
 
+{                                                     // Note: Add the scope once I know where it ends
     // Find suitable VkPhysicalDevice
     VkPhysicalDevice physicalDevice {nullptr};
-    int32_t presentQIndx{-1};
+    uint32_t presentQIndx{~0u};
     constexpr const std::array<const char* const, 1>deviceExtentions {VK_KHR_SWAPCHAIN_EXTENSION_NAME}; 
      uint32_t devicesCnt{};
      vkEnumeratePhysicalDevices(sjt4::rndr::inst, &devicesCnt, nullptr);
      std::unique_ptr<VkPhysicalDevice[]> devices{ new VkPhysicalDevice[devicesCnt] };
      vkEnumeratePhysicalDevices(sjt4::rndr::inst, &devicesCnt, devices.get());
     sjt4::rndr::pickPhysicalDevice<deviceExtentions.size()>(devices.get(), devicesCnt, deviceExtentions, physicalDevice, presentQIndx);
-    if(physicalDevice== nullptr || presentQIndx== -1) {
+    if(physicalDevice== nullptr || presentQIndx== ~0u) {
         LOG("Failed to find suitable physical device. Devices in the system: %d\n" COMMA devicesCnt);
         return VK_ERROR_UNKNOWN;
     }
-    
+   
     // Create VkDevice
     auto priorities{1.0f};
     VkPhysicalDeviceFeatures deviceFeatures;
@@ -172,10 +179,11 @@ VkResult sjt4::rndr::init(const HWND in_mainWnd, const HINSTANCE in_hInst) {
         return res;
     }
 
+
     VkFormat swapchainImagesFormat {};
     VkExtent2D swapchainImageResolution;
     VkColorSpaceKHR swapchainColorSpace {};
-    VkPresentModeKHR swapchainPresentMode;
+    VkPresentModeKHR swapchainPresentMode{};
     //
      uint32_t imageFormatsCnt {};
      std::vector<VkSurfaceFormatKHR> formats;
@@ -185,17 +193,64 @@ VkResult sjt4::rndr::init(const HWND in_mainWnd, const HINSTANCE in_hInst) {
         res = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, sjt4::rndr::presentSurface, &imageFormatsCnt, formats.data());
     } while (res == VK_INCOMPLETE);
     for (auto format : formats) {
-        if(format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+        if(format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
             swapchainColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR, swapchainImagesFormat = VK_FORMAT_B8G8R8A8_SRGB;
-    }
+            break;
+    }}
     if(!swapchainColorSpace && !swapchainImagesFormat)
         swapchainImagesFormat = formats[0].format, swapchainColorSpace = formats[0].colorSpace;
     //
-    // uint32_t 
+     uint32_t presentModesCnt{};
+     std::vector<VkPresentModeKHR> presentModes;
+    do {
+        vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, sjt4::rndr::presentSurface, &presentModesCnt, nullptr);
+        presentModes.resize(presentModesCnt);
+        res = vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, sjt4::rndr::presentSurface, &presentModesCnt, presentModes.data());
+    } while (res == VK_INCOMPLETE);
+    for (auto mode : presentModes) {
+        if(mode == VK_PRESENT_MODE_MAILBOX_KHR) {
+            swapchainPresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
+            break;
+    }}
+    if(!swapchainPresentMode)
+        swapchainPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+    //
+    VkSurfaceCapabilitiesKHR surfaceProperties{};
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, sjt4::rndr::presentSurface, &surfaceProperties);
+    if(!~surfaceProperties.currentExtent.height) {
+        RECT wndResolution;
+        GetClientRect(in_mainWnd, &wndResolution);
+        swapchainImageResolution.height = (uint32_t)wndResolution.bottom, swapchainImageResolution.width = (uint32_t)wndResolution.right;
+    }
+    else {
+        swapchainImageResolution = surfaceProperties.currentExtent;
+    }
+
     VkSwapchainCreateInfoKHR swapchainInfo {
-        
+        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .pNext = nullptr,
+        .flags = NULL,
+        .surface = sjt4::rndr::presentSurface,
+        .minImageCount = surfaceProperties.minImageCount<surfaceProperties.maxImageCount || !surfaceProperties.maxImageCount ? surfaceProperties.minImageCount+1 : surfaceProperties.minImageCount,
+        .imageFormat = swapchainImagesFormat,
+        .imageColorSpace = swapchainColorSpace,
+        .imageExtent = swapchainImageResolution,
+        .imageArrayLayers = 1,
+        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = 1,
+        .pQueueFamilyIndices = &presentQIndx,
+        .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
+        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        .presentMode = swapchainPresentMode,
+        .clipped = VK_FALSE,
+        .oldSwapchain = nullptr
     };
-    
+    if((res = vkCreateSwapchainKHR(sjt4::rndr::device, &swapchainInfo, nullptr, &sjt4::rndr::swapchain)) != VK_SUCCESS) {
+        LOG("Failed to create rndr::swapchain. Code: %d\n" COMMA res);
+        return res;
+    }
+}
 
     return VK_SUCCESS; 
 }
@@ -239,7 +294,7 @@ uint32_t __stdcall sjt4::rndr::debugCallback(VkDebugUtilsMessageSeverityFlagBits
 }
 
 template <int N>
-void sjt4::rndr::pickPhysicalDevice(const VkPhysicalDevice *const in_list, const uint32_t in_length, const typename std::array<const char* const, N>& reqExtensions, VkPhysicalDevice &out_physicalDevice, int32_t &out_qFamilyIndx) noexcept {
+void sjt4::rndr::pickPhysicalDevice(const VkPhysicalDevice *const in_list, const uint32_t in_length, const typename std::array<const char* const, N>& reqExtensions, VkPhysicalDevice &out_physicalDevice, uint32_t &out_qFamilyIndx) noexcept {
     VkPhysicalDeviceProperties selProperties{}, itProperties;
     VkPhysicalDeviceMemoryProperties selMemProperties{}, itMemProperties;
     uint32_t selLocalHeapIndex{};
@@ -278,7 +333,7 @@ void sjt4::rndr::pickPhysicalDevice(const VkPhysicalDevice *const in_list, const
     return;
 }
 template <int N>
-[[gnu::always_inline]] [[gnu::const]] bool sjt4::rndr::physicalDeviceIsSuitable(const VkPhysicalDevice in_physicalDevice, const typename std::array<const char* const, N> in_reqExtensions, int32_t &out_qFamilyIndx) noexcept {
+[[gnu::always_inline]] [[gnu::const]] bool sjt4::rndr::physicalDeviceIsSuitable(const VkPhysicalDevice in_physicalDevice, const typename std::array<const char* const, N> in_reqExtensions, uint32_t &out_qFamilyIndx) noexcept {
     VkResult res;
     
     // Features support
@@ -336,7 +391,7 @@ template <int N>
         vkGetPhysicalDeviceSurfaceSupportKHR(in_physicalDevice, (uint32_t)(itr-itQFamilies.begin()), sjt4::rndr::presentSurface, &qCanPresent);
         if(!qCanPresent)
             continue;
-        out_qFamilyIndx = (int32_t)(itr-itQFamilies.begin());   // !Note: only assigns out_qFamilyIndx if device is suitable
+        out_qFamilyIndx = (uint32_t)(itr-itQFamilies.begin());   // !Note: only assigns out_qFamilyIndx if device is suitable
         hasTheQueue = true; 
         break;
     }
