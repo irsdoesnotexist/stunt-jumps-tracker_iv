@@ -1,0 +1,4 @@
+.vscode/*
+script/deps.json
+.cache
+/source/build/*
