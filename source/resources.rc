@@ -1,0 +1,4 @@
+#include "resource.h"
+
+IDI_VERTEX_SHADER RT_RCDATA "shaders\\vert.spv"
+IDI_FRAGMENT_SHADER RT_RCDATA "shaders\\frag.spv"

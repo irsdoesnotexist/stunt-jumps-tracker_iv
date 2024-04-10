@@ -1,10 +1,10 @@
 {
-  "win32nt": {
-    "Lib": "C:\\Program Files (x86)\\Windows Kits\\10\\Lib\\10.0.22621.0\\um\\arm\\SearchSDK.lib\\..\\..\\..",
-    "Include": "C:\\Program Files (x86)\\Windows Kits\\10\\Include\\10.0.22621.0\\cppwinrt\\winrt\\impl\\windows.system.display.1.h\\..\\..\\..\\.."
-  },
   "vulkan": {
-    "Lib": "C:\\Program Files\\VulkanSDK\\1.3.268.0\\Lib",
-    "Include": "C:\\Program Files\\VulkanSDK\\1.3.268.0\\Include"
+    "Include": "C:\\Program Files\\VulkanSDK\\Include",
+    "Lib": "C:\\Program Files\\VulkanSDK\\Lib"
+  },
+  "win32nt": {
+    "Include": "C:\\Program Files (x86)\\Windows Kits\\10\\Include\\10.0.22621.0\\cppwinrt\\winrt\\impl\\windows.system.display.1.h\\..\\..\\..\\..",
+    "Lib": "C:\\Program Files (x86)\\Windows Kits\\10\\Lib\\10.0.22621.0\\um\\arm\\SearchSDK.lib\\..\\..\\.."
   }
 }

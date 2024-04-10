@@ -1,11 +1,14 @@
 #include "renderer.hpp"
 #include "app.hpp"
-#include "vulkan/vulkan_core.h"
+#include "resource.h"
+#include <winnt.h>
 
 #define VK_USE_PLATFORM_WIN32_KHR
 //#include "vulkan/vulkan_core.h"
 #include <vulkan/vulkan_win32.h>
+#include "vulkan/vulkan_core.h"
 #include <vulkan/vulkan.h>
+#include <errhandlingapi.h>
 
 #include <stdint.h>
 #include <vector>
@@ -14,13 +17,14 @@
 #include <memory>
 #include <algorithm>
 #include <regex>
+#include <optional>
 
 VkResult sjt4::rndr::init(const HWND in_mainWnd, const HINSTANCE in_hInst) {
     VkResult res{VK_SUCCESS};
 
     // Create VkInstance
 #ifdef DEBUG
-    std::vector <const char* const> instanceExts {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};  // App won't work without these
+    std::vector <const char*> instanceExts {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};  // App won't work without these
     std::vector <const char*> validationLayers {"VK_LAYER_LUNARG_api_dump\00", "VK_LAYER_KHRONOS_validation\00", "VK_LAYER_KHRONOS_profiles\00"}; // Ones that are not present will be erased
 {
     uint32_t numberOfLayers{};
@@ -137,7 +141,6 @@ VkResult sjt4::rndr::init(const HWND in_mainWnd, const HINSTANCE in_hInst) {
 
 {                                                     // Note: Add the scope once I know where it ends
     // Find suitable VkPhysicalDevice
-    VkPhysicalDevice physicalDevice {nullptr};
     uint32_t presentQIndx{~0u};
     constexpr const std::array<const char* const, 1>deviceExtentions {VK_KHR_SWAPCHAIN_EXTENSION_NAME}; 
      uint32_t devicesCnt{};
@@ -153,7 +156,8 @@ VkResult sjt4::rndr::init(const HWND in_mainWnd, const HINSTANCE in_hInst) {
     // Create VkDevice
     auto priorities{1.0f};
     VkPhysicalDeviceFeatures deviceFeatures;
-    vkGetPhysicalDeviceFeatures(physicalDevice, &deviceFeatures);
+    //LOG("%p\n\n" COMMA sjt4::rndr::physicalDevice);
+    vkGetPhysicalDeviceFeatures(sjt4::rndr::physicalDevice, &deviceFeatures);
     const VkDeviceQueueCreateInfo queuesInfo {
         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .pNext = nullptr,
@@ -174,12 +178,12 @@ VkResult sjt4::rndr::init(const HWND in_mainWnd, const HINSTANCE in_hInst) {
         .ppEnabledExtensionNames = deviceExtentions.data(),
         .pEnabledFeatures = &deviceFeatures
     };
-    if((res = vkCreateDevice(physicalDevice, &deviceInfo, nullptr, &sjt4::rndr::device)) != VK_SUCCESS) {
+    if((res = vkCreateDevice(sjt4::rndr::physicalDevice, &deviceInfo, nullptr, &sjt4::rndr::device)) != VK_SUCCESS) {
         LOG("Failed to create rndr::device. Code: %d" COMMA res);
         return res;
     }
 
-
+    // Create swapchain
     VkFormat swapchainImagesFormat {};
     VkExtent2D swapchainImageResolution;
     VkColorSpaceKHR swapchainColorSpace {};
@@ -250,7 +254,114 @@ VkResult sjt4::rndr::init(const HWND in_mainWnd, const HINSTANCE in_hInst) {
         LOG("Failed to create rndr::swapchain. Code: %d\n" COMMA res);
         return res;
     }
+
+    // Make image views for the sapchain images
+     uint32_t imagesCnt;
+     std::vector<VkImage> swapchainImages;
+    do {
+        vkGetSwapchainImagesKHR(sjt4::rndr::device, sjt4::rndr::swapchain, &imagesCnt, nullptr);
+        swapchainImages.resize(imagesCnt);
+        res = vkGetSwapchainImagesKHR(sjt4::rndr::device, sjt4::rndr::swapchain, &imagesCnt, swapchainImages.data());
+    } while (res == VK_INCOMPLETE);
+    VkImageViewCreateInfo viewInfo {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = NULL,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = swapchainImagesFormat,
+        .components {.r = VK_COMPONENT_SWIZZLE_IDENTITY, .g = VK_COMPONENT_SWIZZLE_IDENTITY, .b = VK_COMPONENT_SWIZZLE_IDENTITY, .a = VK_COMPONENT_SWIZZLE_IDENTITY},
+        .subresourceRange {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1},
+    };
+    for (auto image : swapchainImages) {
+        viewInfo.image = image;
+        VkImageView view;
+        res = vkCreateImageView(sjt4::rndr::device, &viewInfo, nullptr, &view);
+        if(res != VK_SUCCESS) {
+            LOG("Failed to create image view for swapchain images. Number of images: %d. Code: %d" COMMA imagesCnt COMMA res);
+            return res;
+        }
+        sjt4::rndr::swapchainImagesData.push_back(view);
+    }
+
+    // Allocate command buffers
+    const VkCommandPoolCreateInfo cmdPoolInfo {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = NULL,
+        .queueFamilyIndex = presentQIndx 
+    };
+    res = vkCreateCommandPool(sjt4::rndr::device, &cmdPoolInfo, nullptr, &sjt4::rndr::commandPool);
+    if(res != VK_SUCCESS) {
+        LOG("Failed to create a command pool. Code: %d" COMMA res);
+        return res;
+    }
+    sjt4::rndr::cmdBuffers.resize(imagesCnt);
+    VkCommandBufferAllocateInfo bufferAllocInfo {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .commandPool = sjt4::rndr::commandPool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = imagesCnt
+    };
+    res = vkAllocateCommandBuffers(sjt4::rndr::device, &bufferAllocInfo, sjt4::rndr::cmdBuffers.data());
+    if(res != VK_SUCCESS) {
+        LOG("Failed to allocate command buffers. Number of buffers: %d. Code: %d\n" COMMA imagesCnt COMMA res);
+        return res;
+    }
+
+    sjt4::rndr::readSceneData(reinterpret_cast<const char*>(&sjt4::rndr::obj::data), 0);
+
+    auto vertShader = FindResourceA(nullptr, MAKEINTRESOURCE(IDI_VERTEX_SHADER), RT_RCDATA);
+    auto fragShader = FindResourceA(in_hInst, MAKEINTRESOURCE(IDI_FRAGMENT_SHADER), RT_RCDATA);
+    if (!vertShader || !fragShader) {
+        LOG("Failed to find resources. Error code: %lu. Shaders: %p, %p\n" COMMA GetLastError() COMMA vertShader COMMA fragShader);
+        return VK_ERROR_INVALID_EXTERNAL_HANDLE;
+    }
+    auto pVertShader = LoadResource(nullptr, vertShader);
+    auto pFragShader = LoadResource(nullptr, fragShader);
+    if(!pVertShader || !pFragShader) {
+        LOG("Failed to load resource. Error code: %lu. Shaders: %p, %p\n" COMMA GetLastError() COMMA pVertShader COMMA pFragShader);
+    }
+    VkShaderModuleCreateInfo vertShCI {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = NULL,
+        .codeSize = SizeofResource(nullptr, vertShader),
+        .pCode = reinterpret_cast<const uint32_t*>(LockResource(pVertShader))
+    };
+    VkShaderModuleCreateInfo fragShCI {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = NULL,
+        .codeSize = SizeofResource(nullptr, fragShader),
+        .pCode = reinterpret_cast<const uint32_t*>(LockResource(pFragShader))
+    };
+    
+
+    /*
+    VkCommandBufferBeginInfo bufBI {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext = nullptr,
+        .flags = NULL,
+        .pInheritanceInfo = nullptr
+    };
+    VkRenderPassBeginInfo rndrPassBI {};
+    VkRenderingInfo bufRI {
+        .
+    };
+    for(auto buffer : sjt4::rndr::cmdBuffers) {
+        vkBeginCommandBuffer(buffer, &bufBI);
+        vkCmdBeginRenderPass(buffer, );
+        vkCmdBeginRendering(buffer, );
+        vkCmdEndRendering();
+        vkCmdEndRenderPass();
+        vkEndCommandBuffer();
+        vkCmdBindPipeline(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, );
+    }*/
+
 }
+
+    
 
     return VK_SUCCESS; 
 }
@@ -314,7 +425,7 @@ void sjt4::rndr::pickPhysicalDevice(const VkPhysicalDevice *const in_list, const
                 if (selMemProperties.memoryHeaps[j].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
                     selLocalHeapIndex = j;
             }
-            for(uint32_t j{}; j<itMemProperties.memoryHeapCount; ++j) {  // selMemProperties is guaranteed to have a valid memoryHeaps member, no need to check for that
+            for(uint32_t j{}; j<itMemProperties.memoryHeapCount; ++j) {
                 if (itMemProperties.memoryHeaps[j].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
                     if(itMemProperties.memoryHeaps[j].size > selMemProperties.memoryHeaps[selLocalHeapIndex].size)
                         if(physicalDeviceIsSuitable<N>(in_list[j], reqExtensions, out_qFamilyIndx)){
@@ -391,7 +502,7 @@ template <int N>
         vkGetPhysicalDeviceSurfaceSupportKHR(in_physicalDevice, (uint32_t)(itr-itQFamilies.begin()), sjt4::rndr::presentSurface, &qCanPresent);
         if(!qCanPresent)
             continue;
-        out_qFamilyIndx = (uint32_t)(itr-itQFamilies.begin());   // !Note: only assigns out_qFamilyIndx if device is suitable
+        out_qFamilyIndx = (uint32_t)(itr-itQFamilies.begin());
         hasTheQueue = true; 
         break;
     }
@@ -399,4 +510,125 @@ template <int N>
         return false;
 
     return true;
+}
+
+/*#include <iostream>
+std::ostream &operator<<(std::ostream& out, const glm::vec3* vec) {
+    std::printf("<%f, %f, %f>", vec->x, vec->y, vec->z);
+    return out;
+}
+std::ostream& operator<<(std::ostream& out,const glm::mat3* mat) {
+    out << (const glm::vec3*)mat << ' ' << (const glm::vec3*)((uint64_t)mat+12) << ' ' << (const glm::vec3*)((uint64_t)mat+24) << '\n'; // Fucking pointer arithmetic
+    return out;
+}*/
+void sjt4::rndr::DrawableObject_t::readData(const char*& data) {
+    static constexpr VkBufferCreateInfo uniBufCI {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = NULL,
+        .size = sizeof(const glm::mat3),
+        .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = NULL,
+        .pQueueFamilyIndices = nullptr
+    };
+    vkCreateBuffer(sjt4::rndr::device, &uniBufCI, nullptr, &this->uniformBuf);
+    
+    VkMemoryRequirements bufMemReq;
+    vkGetBufferMemoryRequirements(sjt4::rndr::device, this->uniformBuf, &bufMemReq);
+    
+    VkPhysicalDeviceMemoryProperties memProp;
+    vkGetPhysicalDeviceMemoryProperties(sjt4::rndr::physicalDevice, &memProp);
+    std::optional<uint32_t> memIndex{};
+    for(uint32_t i{}; i<memProp.memoryTypeCount; ++i) {
+        const auto& memType{memProp.memoryTypes[i]};
+        if((memType.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) && (memType.propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) && (bufMemReq.memoryTypeBits & (1 << i))) {
+            memIndex.emplace(i);
+        }
+    }
+    if(!memIndex.has_value()) {
+        LOG("Failed to find appropriate memory type.\n");
+        return;
+    }
+    const VkMemoryAllocateInfo uniformBufAI {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .allocationSize = bufMemReq.size,
+        .memoryTypeIndex = memIndex.value()
+    };
+    vkAllocateMemory(sjt4::rndr::device, &uniformBufAI, nullptr, &this->uboMem);
+    vkBindBufferMemory(sjt4::rndr::device, this->uniformBuf, this->uboMem, NULL);
+    void* mappedMem{};
+    vkMapMemory(sjt4::rndr::device, this->uboMem, NULL, uniBufCI.size, NULL, &mappedMem);
+    std::memcpy(mappedMem, data, sizeof(glm::mat3));
+    ///**/std::cout << reinterpret_cast<const glm::mat3*>(data) << '\n';
+    data+= sizeof(glm::mat3);
+    vkUnmapMemory(sjt4::rndr::device, this->uboMem);
+
+    VkBufferCreateInfo vertBufCI {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = NULL,
+        .size = ((*reinterpret_cast<const uint32_t*>(data))*sizeof(glm::vec3)*2),
+        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE
+    };
+    data+= sizeof(const uint32_t);
+    vkCreateBuffer(sjt4::rndr::device, &vertBufCI, nullptr, &this->vertexBuf);
+
+    vkGetBufferMemoryRequirements(sjt4::rndr::device, this->vertexBuf, &bufMemReq);
+    memIndex.reset();
+    for(uint32_t i{}; i<memProp.memoryTypeCount; ++i) {
+        const auto& memType{memProp.memoryTypes[i]};
+        if((memType.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) && (memType.propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) && (bufMemReq.memoryTypeBits & (1 << i))) {
+            memIndex.emplace(i);
+        }
+    }
+    if(!memIndex.has_value()) {
+        LOG("Failed to find appropriate memory type.\n");
+        return;
+    }
+
+    VkMemoryAllocateInfo vertexBufAI {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .allocationSize = bufMemReq.size,
+        .memoryTypeIndex = memIndex.value()
+    };
+    vkAllocateMemory(sjt4::rndr::device, &vertexBufAI, nullptr, &this->vboMem);
+    vkBindBufferMemory(sjt4::rndr::device, this->vertexBuf, this->vboMem, NULL);
+    /*for(uint32_t i{}; i<((*reinterpret_cast<const uint32_t*>(data-sizeof(uint32_t)))*2); ++i) {
+        std::cout << reinterpret_cast<const glm::vec3*>(data+(sizeof(glm::vec3)*(i))) << '\n';
+    }*/
+    vkMapMemory(sjt4::rndr::device, this->vboMem, NULL, vertexBufAI.allocationSize, NULL, &mappedMem);
+    std::memcpy(mappedMem, data, vertBufCI.size);
+    data+= vertBufCI.size;
+    vkUnmapMemory(sjt4::rndr::device, this->vboMem);
+} 
+bool sjt4::rndr::readSceneData(const char *data, uint8_t sceneTemplateIndex) {
+     LOG("Number of availiable scene templates: %d\n" COMMA *reinterpret_cast<const uint8_t*>(data));
+    if(*reinterpret_cast<const uint8_t*>(data) <= sceneTemplateIndex) {
+        LOG("Requested scene index is out of range.\n");
+        return false;
+    }
+    data+=sizeof(const uint8_t);
+    
+    for(uint8_t i{0}; i<sceneTemplateIndex; ++i)
+        data+= *reinterpret_cast<const std::size_t*>(data);
+    data+= sizeof(const std::size_t);
+    auto objectCount {*reinterpret_cast<const uint16_t*>(data)};
+    data+= sizeof(const uint16_t);
+    sjt4::rndr::sceneObjects.resize(objectCount);
+    for(uint16_t j{}; j<objectCount; ++j) {
+        sjt4::rndr::sceneObjects[j].readData(data);
+    }
+    LOG("Objects in the loaded scene: %d\n" COMMA objectCount);
+    return true;
+}
+
+sjt4::rndr::DrawableObject_t::~DrawableObject_t() {
+    vkDestroyBuffer(sjt4::rndr::device, this->uniformBuf, nullptr);
+    vkDestroyBuffer(sjt4::rndr::device, this->vertexBuf, nullptr);
+    vkFreeMemory(sjt4::rndr::device, this->uboMem, nullptr);
+    vkFreeMemory(sjt4::rndr::device, this->vboMem, nullptr);
 }

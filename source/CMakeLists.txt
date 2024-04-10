@@ -57,10 +57,12 @@ add_compile_definitions($<$<CONFIG:DEBUG>:DEBUG>)
 
 project(sjt4)
 
+add_custom_command(COMMAND rc.exe -I ${CMAKE_CURRENT_SOURCE_DIR}/shaders -fo ${CMAKE_CURRENT_SOURCE_DIR}/resources/resources.res ${CMAKE_CURRENT_SOURCE_DIR}resources.rc OUTPUT resources.res DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/resources.rc ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vert.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/frag.spv)
 add_executable ( ${PROJECT_NAME}
     main.cxx
     app.cxx app.hpp
     renderer.cxx renderer.hpp
+    resources/resources.res
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC $<$<PLATFORM_ID:Windows>:${win32Include}>)
