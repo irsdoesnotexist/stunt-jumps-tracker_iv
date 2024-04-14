@@ -3,4 +3,3 @@ script/deps.json
 .cache
 .clangd
 /source/build/*
-!source/build/build.ninja

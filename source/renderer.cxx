@@ -1,7 +1,7 @@
 #include "renderer.hpp"
 #include "app.hpp"
-#include "resource.h"
-#include <winnt.h>
+#include "resources/resourcesInclude.h"
+#include <wingdi.h>
 
 #define VK_USE_PLATFORM_WIN32_KHR
 //#include "vulkan/vulkan_core.h"
@@ -9,6 +9,7 @@
 #include "vulkan/vulkan_core.h"
 #include <vulkan/vulkan.h>
 #include <errhandlingapi.h>
+#include <winnt.h>
 
 #include <stdint.h>
 #include <vector>
@@ -311,7 +312,7 @@ VkResult sjt4::rndr::init(const HWND in_mainWnd, const HINSTANCE in_hInst) {
 
     sjt4::rndr::readSceneData(reinterpret_cast<const char*>(&sjt4::rndr::obj::data), 0);
 
-    auto vertShader = FindResourceA(nullptr, MAKEINTRESOURCE(IDI_VERTEX_SHADER), RT_RCDATA);
+    /*auto vertShader = FindResourceA(nullptr, MAKEINTRESOURCE(IDI_VERTEX_SHADER), RT_RCDATA);
     auto fragShader = FindResourceA(in_hInst, MAKEINTRESOURCE(IDI_FRAGMENT_SHADER), RT_RCDATA);
     if (!vertShader || !fragShader) {
         LOG("Failed to find resources. Error code: %lu. Shaders: %p, %p\n" COMMA GetLastError() COMMA vertShader COMMA fragShader);
@@ -321,20 +322,27 @@ VkResult sjt4::rndr::init(const HWND in_mainWnd, const HINSTANCE in_hInst) {
     auto pFragShader = LoadResource(nullptr, fragShader);
     if(!pVertShader || !pFragShader) {
         LOG("Failed to load resource. Error code: %lu. Shaders: %p, %p\n" COMMA GetLastError() COMMA pVertShader COMMA pFragShader);
+    }*/
+
+    if(!vertSpv || !fragSpv) {
+        LOG("Failed to find shader data. %p %p\n" COMMA vertSpv COMMA fragSpv);
+    }
+    if(!vertSpv_size || !fragSpv_size) {
+        LOG("Bad shader code size. Vert:%d, Frag:%d" COMMA vertSpv_size COMMA fragSpv_size);
     }
     VkShaderModuleCreateInfo vertShCI {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .pNext = nullptr,
         .flags = NULL,
-        .codeSize = SizeofResource(nullptr, vertShader),
-        .pCode = reinterpret_cast<const uint32_t*>(LockResource(pVertShader))
+        .codeSize = vertSpv_size,//SizeofResource(nullptr, vertShader),
+        .pCode = vertSpv//reinterpret_cast<const uint32_t*>(LockResource(pVertShader))
     };
     VkShaderModuleCreateInfo fragShCI {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .pNext = nullptr,
         .flags = NULL,
-        .codeSize = SizeofResource(nullptr, fragShader),
-        .pCode = reinterpret_cast<const uint32_t*>(LockResource(pFragShader))
+        .codeSize = fragSpv_size,//SizeofResource(nullptr, fragShader),
+        .pCode = fragSpv//reinterpret_cast<const uint32_t*>(LockResource(pFragShader))
     };
     
 
